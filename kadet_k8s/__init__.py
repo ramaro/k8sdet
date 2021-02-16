@@ -4,7 +4,7 @@ import logging
 from kadet import BaseObj, Dict
 from kubernetes.client import ApiClient
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 K8S_API = ApiClient()
 
@@ -22,9 +22,11 @@ class K8sObj(BaseObj):
         model = self.kwargs.model
         k8s_client_module = import_module("kubernetes.client.models")
         model_class = getattr(k8s_client_module, model, None)
+
         if model_class is None:
             raise ValueError(f"Could not load kubernetes-client model '{model}'")
         self.k8s_model = model_class
+
         logger.debug("using model params", self.kwargs.params)
 
         # if param is BaseObj, run .dump()
@@ -47,6 +49,19 @@ class K8sObj(BaseObj):
         self.need(key, **kwargs)
         self.kwargs.params[key] = self.kwargs[key]
 
+    def model_optional(self, key, istype=None):
+        """
+        if set, copy key into model params
+        if set, check type
+        """
+        if key in self.kwargs:
+            self.kwargs.params[key] = self.kwargs[key]
+
+            if istype is not None:
+                assert isinstance(
+                    self.kwargs[key], istype
+                ), f"'{key}' is not instance of '{istype}'"
+
 
 class Deployment(K8sObj):
     def new(self):
@@ -60,6 +75,40 @@ class Deployment(K8sObj):
 class DeploymentSpec(K8sObj):
     def new(self):
         self.kwargs.model = "V1DeploymentSpec"
-        self.model_need("selector")
-        self.model_need("template")
+        self.model_need("selector", istype=LabelSelector)
+        self.model_need("template", istype=PodTemplateSpec)
+        super().new()
+
+
+class LabelSelector(K8sObj):
+    def new(self):
+        self.kwargs.model = "V1LabelSelector"
+        self.model_need("match_labels", istype=dict)
+        super().new()
+
+
+class PodTemplateSpec(K8sObj):
+    def new(self):
+        self.kwargs.model = "V1PodTemplateSpec"
+        self.model_need("metadata", istype=ObjectMeta)
+        self.model_need("spec", istype=PodSpec)
+        super().new()
+
+
+class ObjectMeta(K8sObj):
+    def new(self):
+        self.kwargs.model = "V1ObjectMeta"
+        self.model_need("name", istype=str)
+        self.model_need("annotations", istype=dict)
+        self.model_need("namespace", istype=str)
+        self.model_need("labels", istype=dict)
+        super().new()
+
+
+class PodSpec(K8sObj):
+    def new(self):
+        self.kwargs.model = "V1PodSpec"
+        self.model_need("containers", istype=list)
+        self.model_optional("node_selector", istype=dict)
+        # ...
         super().new()
